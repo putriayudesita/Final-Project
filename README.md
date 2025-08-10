@@ -9,3 +9,12 @@ Due to **confidentially** of internal data which obtained from the company, with
 * ```SSR2``` is the **transformed data of phase two** used Spatial Signed Rank menthod.
 * ```clean2``` is the in-control data for phase two which obtained after the mean monitoring.
 * ```clean1``` is the in-control data for phase one which obtained after the mean monitoring.
+
+### ANALYSIS
+The analysis should be conduct per phase. Here's the right steps:
+1. Statistics Descriptive
+2. MEWMV for Phase One
+3. SSRM for Phase One
+4. MEWMV for Phase Two
+5. SSRM for Phase Two
+6. Process Capability
