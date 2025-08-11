@@ -1,0 +1,1206 @@
+#' ---
+#' title: "QUALITY CONTROL OF FABA AS ALTERNATIVE RAW MATERIAL FOR CEMENT PRODUCING IN PT SEMEN INDONESIA (PERSERO) TBK BY USING MEWMV AND SPATIAL SIGNED RANK MEWMA (SSRM) CONTROL CHART"
+#' author: "Putri Ayu Desita"
+#' date: June 13 2025
+#' output:
+#'   github_document:
+#'     html_preview: false
+#' ---
+#' 
+#' Within this document, I tried to analyze the management of FABA waste from power plant industries in Indonesia. The quality control of the FABA's characteristics will be analyzed using a **Multivariate Control Chart**, both the *mean* and the *variance*.
+#' 
+#' ## Table of Contents
+#' 1. [Preprocessing Data](#preprocessing-data)
+#'     - [Libraries](#libraries)
+#'     - [Load the Data](#load-the-data)
+#'     - [Missing Values](#checking-missing-values)
+#'     - [Outliers](#checking-outliers)
+#' 2. [Dependencies Test](#dependencies-test)
+#' 3. [Normality Test](#normality-test)
+#'     - [Data Distribution](#data-distribution)
+#'     - [Univariate](#univariate)
+#'     - [Multivariate](#multivariate)
+#' 4. [Phase Division](#phase-division)
+#' 5. [MEWMV](#mewmv)
+#'     - [MEWMV Functions](#mewmv-functions)
+#'     - [Parameters Identification](#parameters-identification)
+#'     - [Out-of-Control Identification](#out-of-control-identification-for-mewmv)
+#'     - [Gaining In Control Data](#gaining-in-control-data)
+#'     - [Monitoring the Process](#monitoring-the-process)
+#' 6. [SSR Transformation](#ssr-transformation)
+#'     - [First Phase](#first-phase)
+#'     - [Second Phase](#second-phase)
+#' 7. [Spatial Signed Rank MEWMA](#spatial-signed-rank-mewma)
+#'     - [Out-of-Control Identification](#out-of-control-identification-for-ssrm)
+#'     - [Gaining In Control SSRM](#gaining-in-control-ssrm)
+#'     - [Monitoring the Mean Process](#monitoring-the-mean-process)
+#' 8. [Process Capability](#process-capability)
+#' 9. [References](#references)
+#' 
+#' ## Preprocessing Data
+#' The important steps of analysis in **preprocessing data** are to know the number of missing values, which can affect the number data—either remove or substitute the missing values—and detect the underlying outliers within the dataset that leads to the decision on methods selections.
+#' 
+#' ### Libraries
+## ----load-libraries, message=FALSE, warning=FALSE---------
+library(readxl)
+library(psych)
+library(GGally)
+library(mvnormtest)
+library(SpatialNP)
+library(writexl)
+library(MASS)
+library(MNM)
+
+#' 
+#' ### Load the Data
+## ---------------------------------------------------------
+rawdata <- read_excel("Data FABA.xlsx", sheet = 'Decimal')
+df1 <- read_excel("Scaled Phase One.xlsx")
+df2 <- read_excel("Scaled Phase Two.xlsx")
+clean <- read_excel("data_bersih.xlsx")
+SSR1 <- read_excel("SSR1_v2.xlsx")
+SSR2 <- read_excel("SSR2.xlsx")
+clean2 <- read_excel("fase_2_cleaned.xlsx")
+clean1 <- read_excel("fase_1_cleaned.xlsx")
+
+#' 
+#' The dataset is contains the materials—differs between fly ash, bottom ash, bottom ash jamur, bottom ash organik, and faba mix—, vendor names which confidential, the date the company recieved the wastes, moisture content, total sulphur, calories, ash content, SiO2, Al2O3, Fe2O3, and CaO.
+#' 
+#' The dataset is a non-decimal numbers at default which can lead the gap in scale once I tried to plot the control chart. Hence, I converted the data into decimals by divided it by 100 since the variables I will use is in percentage.
+#' 
+## ---------------------------------------------------------
+data <- rawdata[c("Moisture Content", "SiO2", "Al2O3", "Fe2O3", "CaO")]
+head(data)
+nrow(data)
+summary(data)
+
+#' 
+#' ### Checking Missing Values
+## ---------------------------------------------------------
+colSums(is.na(data))
+
+#' Seeing the results, there is no missing value within the dataset. Hence, the analysis can be conduct.
+#' 
+#' ### Checking Outliers
+#' Checking outliers is one of the important steps. By knowing the number of outliers, I can decided on which methods I will use.
+#' 
+#' If the number of outliers is low, I will remove the outliers and conduct the analysis by using **Classic MEWMA** and **MEWMV**. However, if the number of outliers is high, I will conduct the analysis by using **Spatial Sign Ranked MEWMA (SSRM)** and **MEWMV**. The latter MEWMA method can be used for non-normal data distributions and is robust to large number of outliers.
+#' 
+## ---------------------------------------------------------
+par(mfrow = c(1, 5))
+boxplot(data$SiO2, main = "SiO2", col = "lightblue")
+boxplot(data$Al2O3, main = "Al2O3", col = "lightgreen")
+boxplot(data$Fe2O3, main = "Fe2O3", col = "lightcoral")
+boxplot(data$CaO, main = "CaO", col = "lightyellow")
+boxplot(data$`Moisture Content`, main = "Moisture Content", col = "lightpink")
+
+#' By using boxplot, I can see the underlying outliers. For the five variables I will used, all of them have large number of outliers. Hence, I will use **Spatial Sign Ranked MEWMA (SSRM)** and **MEWMV** Control Chart to analyze.
+#' 
+#' ## Dependencies Test
+#' Dependecies test is used to know if there is any relation between the variables which helps determinded whether the analysis is conducted base on univariate or multivariate.
+#' 
+## ---------------------------------------------------------
+r <- cor(data)
+cortest.bartlett(r,447)
+
+#' The p-value for this test is `r cortest.bartlett(r,447)$p.value` which is smaller than the significance level or alpha. The determined alpha is 0.05.
+#' 
+#' The conclusion of this test is those variables are depended to each other, hence the analysis will be conducted based on multivariate.
+#' 
+#' To know the dependencies between each variables, I will use a plot that show the correlations between variables.
+#' 
+## ---------------------------------------------------------
+ggpairs(data,
+        lower = list(continuous = wrap("smooth", method = "lm", color = "dark grey")),
+        diag = list(continuous = "densityDiag"),
+        upper = list(continuous = "cor"))
+
+#' 
+#' The correlations between Moisture Content and other variables are low. With this, Moisture Content will be excluded from the multivariate analysis and will be conduct based on univariate by itself.
+#' 
+#' With the conclusion above, the data will be redefine with excluding the Moisture Content variables.
+#' 
+## ---------------------------------------------------------
+data <- rawdata[c("SiO2", "Al2O3", "Fe2O3", "CaO")]
+
+#' 
+#' Once I redefined the `data`, the dependencies test is re-conduct to know the dependencies and correlations between the four variables.
+#' 
+## ---------------------------------------------------------
+r <- cor(data)
+cortest.bartlett(r,447)
+
+#' 
+## ---------------------------------------------------------
+ggpairs(data,
+        lower = list(continuous = wrap("smooth", method = "lm", color = "dark grey")),
+        diag = list(continuous = "densityDiag"),
+        upper = list(continuous = "cor"))
+
+#' 
+#' ## Normality Test
+#' The normality test is used to know the distribution of the each variables. Despite Classic MEWMA is insensitive to normality, but SSRM is more robust to be used with the distributions that is not normal.
+#' 
+#' ### Data Distribution
+## ---------------------------------------------------------
+par(mfrow = c(1, 4))
+hist(data$SiO2, xlim = c(0,1), ylim = c(0, 250), main = "SiO2", xlab = "Persentase")
+hist(data$Al2O3, xlim = c(0,1), ylim = c(0, 250), main = "Al2O2", xlab = "Persentase")
+hist(data$Fe2O3, xlim = c(0,1), ylim = c(0, 250), main = "Fe2O3", xlab = "Persentase")
+hist(data$CaO, xlim = c(0,1), ylim = c(0, 250), main = "CaO", xlab = "Persentase")
+
+#' 
+## ----echo=FALSE, results='hide'---------------------------
+# RESET THE COLUMN FOR PLOT
+par(mfrow = c(1, 1))
+
+#' 
+#' ### Univariate
+## ---------------------------------------------------------
+shapiro.test(data$SiO2)
+shapiro.test(data$Al2O3)
+shapiro.test(data$Fe2O3)
+shapiro.test(data$CaO)
+
+#' 
+#' P-Value for all those variables are lower than the significance level (0.05) which means that the variables has not normal distribution.
+#' 
+#' ### Multivariate
+## ---------------------------------------------------------
+mshapiro.test(t(data))
+
+#' 
+#' The p-value which obtained from the multivariate normality test is lower than the significance level which led a conclusion of the data is **not normal distributed in multivariate**.
+#' 
+#' ## Phase Division
+#' Phase division is an important step for quality control analysis. Once having the optimal parameters for the control chart, it can be used as the base for future quality control.
+#' 
+#' The phase is divided into two groups. The first phase will be used to obtain the optimal parameters. The second one will be used as a testing to the obtained parameters to see if the production in the company is already in control or not.
+#' 
+## ---------------------------------------------------------
+fase_1 <- data[1:361, ]
+fase_2 <- data[362:nrow(data), ]
+
+#' 
+#' To know the distribution for each variables in both phases, I plotted box-plot to see how the data distributed.
+#' 
+## ---------------------------------------------------------
+par(mfrow = c(1, 4))
+boxplot(fase_1$SiO2, main = "SiO2", col = "lightblue")
+boxplot(fase_1$Al2O3, main = "Al2O3", col = "lightgreen")
+boxplot(fase_1$Fe2O3, main = "Fe2O3", col = "lightcoral")
+boxplot(fase_1$CaO, main = "CaO", col = "lightyellow")
+
+#' 
+## ---------------------------------------------------------
+par(mfrow = c(1, 4))
+boxplot(fase_2$SiO2, main = "SiO2", col = "lightblue")
+boxplot(fase_2$Al2O3, main = "Al2O3", col = "lightgreen")
+boxplot(fase_2$Fe2O3, main = "Fe2O3", col = "lightcoral")
+boxplot(fase_2$CaO, main = "CaO", col = "lightyellow")
+
+#' 
+## ----echo=FALSE, results='hide'---------------------------
+# RESET THE COLUMN FOR PLOT
+par(mfrow = c(1, 1))
+
+#' 
+## ---------------------------------------------------------
+fase_1 <- scale(fase_1)
+fase_2 <- scale(fase_2)
+
+#' 
+#' After the division, I standardized each phases and exported them to **df1** and **df2**.
+#' 
+#' In this division, I decided to start the phase two from November and December.
+#' 
+#' This dataset is containing 477 rows of data. Though using last two months as the second phase can be a good choice for the control chart in general as it can represent more data as the testing, it can be unfavorable for this case. The data is obtained irregular which led to the gap of the distribution for the phases. 
+#' 
+#' In this particular cases, the number of data for the last two months are not quite far from January to October. The lack of data can lead a problem such as the first phase cannot represent the data perfectly.
+#' 
+#' ## MEWMV
+#' **Multivariate Exponentially Weighted Moving Variance** or **MEWMV** is a control chart that used to monitor the process variability in multivariate. This method does not have any assumption related to normality distribution, hence it can be used to this case.
+#' 
+#' ### MEWMV Function
+#' Here is the function code of MEWMV that I will use in this analysis.
+#' 
+## ---------------------------------------------------------
+MEWMV <- function(data, omega, lambda, p, L) {
+  Y <- as.matrix(data)
+  n <- nrow(Y)
+  I <- diag(n)
+
+  elemen <- lambda * (1 - lambda)^(0:(n - 1))
+
+  M <- matrix(0, nrow = n, ncol = n)
+  for (i in 1:n) {
+    for (j in 1:n) {
+      if (i >= j) {
+        for (l in i:n) {
+          M[l, j] <- elemen[l - j + 1]
+        }
+      }
+    }
+  }
+
+  A <- Y %*% t(Y)
+
+  trv <- numeric(n)
+  ekspektasi <- numeric(n)
+  var <- numeric(n)
+  ba <- numeric(n)
+  bb <- numeric(n)
+
+  for (u in 1:n) {
+    Apartu <- A[1:u, 1:u]
+    Ipartu <- I[1:u, 1:u]
+    Mpartu <- M[1:u, 1:u]
+
+    elemenC <- numeric(u)
+    for (i in 1:u) {
+      elemenC[i] <- if (i > 1) omega * (1 - omega)^(u - i) else (1 - omega)^(u - i)
+    }
+
+    C <- diag(elemenC)
+    Q <- (Ipartu - Mpartu) %*% C %*% t(Ipartu - Mpartu)
+    trv[u] <- sum(diag(Q %*% Apartu))
+    ekspektasi[u] <- p * sum(diag(Q))
+    var[u] <- 2 * p * sum(Q^2)
+    ba[u] <- ekspektasi[u] + L * sqrt(var[u])
+    bb[u] <- ekspektasi[u] - L * sqrt(var[u])
+  }
+
+  keluar <- 0
+  d <- 0
+  yangkeluar <- c()
+
+  for (i in 1:(n - 1)) {
+    if (trv[i] < bb[i] || trv[i] > ba[i]) {
+      keluar <- keluar + 1
+      d <- d + 1
+      yangkeluar[d] <- i
+    }
+  }
+
+  index_max_trv <- which.max(trv)
+
+  cat("Numbers of Out of Control:", keluar, "\n")
+  cat("Maximum value of Tr(Vn):", round(trv[index_max_trv], 6), "\n")
+  cat("Occurred in:", index_max_trv, "\n")
+  cat("UCL Value:", round(ba[index_max_trv], 6), "\n")
+  cat("LCL Value:", round(bb[index_max_trv], 6), "\n")
+
+  colors <- ifelse(trv < bb | trv > ba, "red", "blue")
+
+  plot(1:n, trv, type = "n", xlab = "Observation", ylab = "Trace Vn",
+       ylim = c(min(bb, trv) - 0.1, max(ba, trv) + 0.1))
+
+  points(1:n, trv, col = colors, pch = 19, cex = 0.6)  
+  lines(1:n, trv, col = "gray", lty = 2)             
+  lines(1:n, ba, col = "black", lwd = 1, lty = 1)    
+  lines(1:n, bb, col = "black", lwd = 1, lty = 1) 
+
+  return(list(
+    out_of_control_count = keluar,
+    out_of_control_indices = yangkeluar,
+    trv = trv,
+    ba = ba,
+    bb = bb,
+    max_trv = trv[index_max_trv],
+    index_max_trv = index_max_trv,
+    UCL = ba[index_max_trv],
+    LCL = bb[index_max_trv]
+  ))
+}
+
+#' 
+#' ### Parameters Identification
+#' The first phase is used to identify the optimal parameters. The optimal ones are chosen by on the combination of **omega** and **lambda** that generate the ***highest total number of out-of control observations***.
+#' 
+#' The [parameter][mewmv] I used here is referenced to the research that already conducted.
+#' 
+## ---------------------------------------------------------
+MEWMV_full <- MEWMV(scale(data), 0.1, 0.1, 4, 2.7832)
+
+#' 
+## ---------------------------------------------------------
+MEWMV1 <- MEWMV(df1, 0.1, 0.1, 4, 2.7832)
+
+#' 
+## ---------------------------------------------------------
+MEWMV2 <- MEWMV(df1, 0.1, 0.5, 4, 2.7831)
+
+#' 
+## ---------------------------------------------------------
+MEWMV3 <- MEWMV(df1, 0.1, 0.9, 4, 2.7945)
+
+#' 
+## ---------------------------------------------------------
+MEWMV4 <- MEWMV(df1, 0.5, 0.1, 4, 3.9424)
+
+#' 
+## ---------------------------------------------------------
+MEWMV5 <- MEWMV(df1, 0.5, 0.5, 4, 3.9522)
+
+#' 
+## ---------------------------------------------------------
+MEWMV6 <- MEWMV(df1, 0.5, 0.9, 4, 3.9619)
+
+#' 
+## ---------------------------------------------------------
+MEWMV7 <- MEWMV(df1, 0.9, 0.1, 4, 4.3199)
+
+#' 
+## ---------------------------------------------------------
+MEWMV8 <- MEWMV(df1, 0.9, 0.5, 4, 4.3106)
+
+#' 
+## ---------------------------------------------------------
+MEWMV9 <- MEWMV(df1, 0.9, 0.9, 4, 4.2834)
+
+#' 
+#' From all the combinations I got, the chosen **parameters combination** is **omega = 0.1 and lambda = 0.1**. The parameters are chosen based on the highest numbers of Out-of-Control observations: which are the first combination.
+#' 
+#' ### Out-of-Control Identification for MEWMV
+#' Once I got the optimum parameters, which are omega = 0.1 and lambda = 0.1, by using combinations between two variables, the control chart must has no OOC observations to gain an insight the cause of OOC observations. In this CC, the used parameters are the ones that already optimal or obtained in the first phase. With the same codes, here's the result:
+#' 
+## ----results='hide'---------------------------------------
+comb_1 <- df1[c("SiO2", "Al2O3")]
+comb_2 <- df1[c("SiO2", "Fe2O3")]
+comb_3 <- df1[c("SiO2", "CaO")]
+comb_4 <- df1[c("Al2O3", "Fe2O3")]
+comb_5 <- df1[c("Al2O3", "CaO")]
+comb_6 <- df1[c("Fe2O3", "CaO")]
+comb_7 <- df1[c("SiO2", "Al2O3", "Fe2O3")]
+comb_8 <- df1[c("SiO2", "Al2O3", "CaO")]
+comb_9 <- df1[c("SiO2", "Fe2O3", "CaO")]
+comb_10 <- df1[c("Al2O3", "Fe2O3", "CaO")]
+
+#' 
+## ---------------------------------------------------------
+MEWMV_C1 <- MEWMV(comb_1, 0.1, 0.1, 2, 2.8738)
+
+#' 
+## ---------------------------------------------------------
+MEWMV_C2 <- MEWMV(comb_2, 0.1, 0.1, 2, 2.8738)
+
+#' 
+## ---------------------------------------------------------
+MEWMV_C3 <- MEWMV(comb_3, 0.1, 0.1, 2, 2.8738)
+
+#' 
+## ---------------------------------------------------------
+MEWMV_C4 <- MEWMV(comb_4, 0.1, 0.1, 2, 2.8738)
+
+#' 
+## ---------------------------------------------------------
+MEWMV_C5 <- MEWMV(comb_5, 0.1, 0.1, 2, 2.8738)
+
+#' 
+## ---------------------------------------------------------
+MEWMV_C6 <- MEWMV(comb_6, 0.1, 0.1, 2, 2.8738)
+
+#' 
+## ---------------------------------------------------------
+MEWMV_C7 <- MEWMV(comb_7, 0.1, 0.1, 3, 2.7900)
+
+#' 
+## ---------------------------------------------------------
+MEWMV_C8 <- MEWMV(comb_8, 0.1, 0.1, 3, 2.7900)
+
+#' 
+## ---------------------------------------------------------
+MEWMV_C9 <- MEWMV(comb_9, 0.1, 0.1, 3, 2.7900)
+
+#' 
+## ---------------------------------------------------------
+MEWMV_C10 <- MEWMV(comb_10, 0.1, 0.1, 3, 2.7900)
+
+#' 
+#' 
+#' Based on the results of those combinations, the combinations which contained `CaO` are having the higher number of OOC. Hence, it can be said that `CaO` may be the caused of the OOC observations.
+#' 
+#' ### Gaining In Control Data
+#' Once I've done the identification, I need to repair the CC by eliminating all the OOC observations one by one using iterations which code can be seen below:
+#' 
+## ---------------------------------------------------------
+MEWMV_iterasi <- function(data, omega, lambda, p, L, save_last_plot = TRUE, last_plot_filename = "iterasi_terakhir.png") {
+  df_iterasi <- data
+  iterasi <- 1
+  last_result <- NULL
+  
+  repeat {
+    cat("==== Iterasi", iterasi, "====\n")
+    result <- MEWMV(df_iterasi, omega, lambda, p, L)
+
+    # save the latest result
+    last_result <- result
+    
+    title(main = paste("Iterasi", iterasi))
+    
+    #index for the OOC observation
+    ooc <- result$out_of_control_indices
+    if (length(ooc) == 0) {
+      cat("Sudah tidak ada OOC.\n")
+      
+      if (save_last_plot) {
+        # remake the plot and save it
+        png(filename = last_plot_filename, width = 800, height = 600)
+        n <- length(last_result$trv)
+        plot(1:n, last_result$trv, type = "b", col = "blue", pch = 19, cex = 0.6,
+             xlab = "Observation", ylab = "Trace Vn",
+             ylim = c(min(last_result$bb, last_result$trv) - 0.1, max(last_result$ba, last_result$trv) + 0.1))
+        lines(1:n, last_result$ba, col = "black", lwd = 1, lty = 1)  # UCL
+        lines(1:n, last_result$bb, col = "black", lwd = 1, lty = 1)  # LCL
+        dev.off()
+        cat("Plot iterasi terakhir disimpan ke:", last_plot_filename, "\n")
+      }
+
+      break
+    }
+    
+    # finding the OOC with highest tr(Vn) value and eliminate it
+    trv_ooc <- result$trv[ooc]
+    max_ooc <- ooc[which.max(trv_ooc)]
+    df_iterasi <- df_iterasi[-max_ooc, ]
+    
+    iterasi <- iterasi + 1
+  }
+  
+  return(df_iterasi)
+}
+
+#' 
+## ---------------------------------------------------------
+df_bersih <- MEWMV_iterasi(df1, omega = 0.1, lambda = 0.1, p = 4, L = 2.7832)
+
+#' 
+#' ### Monitoring the Process
+#' The second phase is used to monitor the variability in the process using the chosen parameters in the [previous step](#parameters-identification). By using the same codes and parameters (omega = 0.1 and lambda = 0.1), here is the result of the control chart for the second phase:
+#' 
+## ---------------------------------------------------------
+MEWMV_P2 <- MEWMV(df2, 0.1, 0.1, 4, 2.7832)
+
+#' 
+#' Based on the result,it can be seen that in the second phase, there are some OOC observations. Hence, there's a need to identification for the cause of it once again.
+#' 
+## ----results='hide'---------------------------------------
+comb_1 <- df2[c("SiO2", "Al2O3")]
+comb_2 <- df2[c("SiO2", "Fe2O3")]
+comb_3 <- df2[c("SiO2", "CaO")]
+comb_4 <- df2[c("Al2O3", "Fe2O3")]
+comb_5 <- df2[c("Al2O3", "CaO")]
+comb_6 <- df2[c("Fe2O3", "CaO")]
+comb_7 <- df2[c("SiO2", "Al2O3", "Fe2O3")]
+comb_8 <- df2[c("SiO2", "Al2O3", "CaO")]
+comb_9 <- df2[c("SiO2", "Fe2O3", "CaO")]
+comb_10 <- df2[c("Al2O3", "Fe2O3", "CaO")]
+
+#' 
+## ---------------------------------------------------------
+MEWMV_C1 <- MEWMV(comb_1, 0.1, 0.1, 2, 2.8738)
+
+#' 
+## ---------------------------------------------------------
+MEWMV_C2 <- MEWMV(comb_2, 0.1, 0.1, 2, 2.8738)
+
+#' 
+## ---------------------------------------------------------
+MEWMV_C3 <- MEWMV(comb_3, 0.1, 0.1, 2, 2.8738)
+
+#' 
+## ---------------------------------------------------------
+MEWMV_C4 <- MEWMV(comb_4, 0.1, 0.1, 2, 2.8738)
+
+#' 
+## ---------------------------------------------------------
+MEWMV_C5 <- MEWMV(comb_5, 0.1, 0.1, 2, 2.8738)
+
+#' 
+## ---------------------------------------------------------
+MEWMV_C6 <- MEWMV(comb_6, 0.1, 0.1, 2, 2.8738)
+
+#' 
+## ---------------------------------------------------------
+MEWMV_C7 <- MEWMV(comb_7, 0.1, 0.1, 3, 2.7900)
+
+#' 
+## ---------------------------------------------------------
+MEWMV_C8 <- MEWMV(comb_8, 0.1, 0.1, 3, 2.7900)
+
+#' 
+## ---------------------------------------------------------
+MEWMV_C9 <- MEWMV(comb_9, 0.1, 0.1, 3, 2.7900)
+
+#' 
+## ---------------------------------------------------------
+MEWMV_C10 <- MEWMV(comb_10, 0.1, 0.1, 3, 2.7900)
+
+#' 
+#' ## SSR Transformation
+#' For both phases, once I transformed the original data into the transformed ones, I dediced to export it into xlsx so I can use it without needing to run all the codes again.
+#' 
+#' Below are codes to tranform the data into spatial sign, spatial rank, and spatial signed rank. In addition to that, I made `pairplot` to compare the variables, from the orifinal data to each transformed ones.
+#' 
+#' ### First Phase
+## ---------------------------------------------------------
+par(mfrow = c(2,2), pty = "s", las = 1)
+plot(clean, xlim = c(-4,4),
+     ylim = c(-4,4),
+     main = "Data Asli")
+
+#' 
+## ---------------------------------------------------------
+# Transformasi Spatial Sign
+SY1 <- spatial.sign(clean, FALSE, FALSE)
+pairs(SY1, labels = colnames(df1),
+      xlim = c(-1,1),
+      ylim = c(-1,1),
+      main = "Spatial Sign")
+
+#' 
+## ---------------------------------------------------------
+# Transformasi Spatial Rank
+RY1 <- spatial.rank(clean, FALSE)
+pairs(RY1, labels = colnames(df1),
+      xlim = c(-1,1),
+      ylim = c(-1,1),
+      main = "Spatial Rank")
+
+#' 
+## ---------------------------------------------------------
+# Transformasi Spatial Signed Rank
+QY1 <- spatial.signrank(clean, FALSE, FALSE)
+pairs(QY1, labels = colnames(df1),
+      xlim = c(-1,1),
+      ylim = c(-1,1),
+      main = "Spatial Signed Rank")
+
+#' 
+#' ### Second Phase
+## ---------------------------------------------------------
+par(mfrow = c(2,2), pty = "s", las = 1)
+plot(df2, xlim = c(-4,4),
+     ylim = c(-4,4),
+     main = "Data Asli")
+
+#' 
+## ---------------------------------------------------------
+# Transformasi Spatial Sign
+SY2 <- spatial.sign(df2, FALSE, FALSE)
+pairs(SY2, labels = colnames(df2),
+      xlim = c(-1,1),
+      ylim = c(-1,1),
+      main = "Spatial Sign")
+
+#' 
+## ---------------------------------------------------------
+# Transformasi Spatial Rank
+RY2 <- spatial.rank(df2, FALSE)
+pairs(RY2, labels = colnames(df2),
+      xlim = c(-1,1),
+      ylim = c(-1,1),
+      main = "Spatial Rank")
+
+#' 
+## ---------------------------------------------------------
+# Transformasi Spatial Signed Rank
+QY2 <- spatial.signrank(df2, FALSE, FALSE)
+pairs(QY2, labels = colnames(df2),
+      xlim = c(-1,1),
+      ylim = c(-1,1),
+      main = "Spatial Signed Rank")
+
+#' 
+#' 
+#' ## Spatial Signed Rank MEWMA
+#' **Multivariate Exponentially Weighted Moving Average** or **MEWMA** is a control chart that widely used for monitoring the multivariate process in `means`.
+#' 
+#' Below are the modified [codes][mewma] from MEWMA to **SSRM** to adjust my case. The modification contains: adjusting the UCL from MEWMA's to SSRM's and the data that will be used. SSRM used data that already transformed using SSR method.
+#' 
+#' 
+#' This is the function that I will use to plot the control chart:
+#' 
+## ----results='hide', echo=FALSE---------------------------
+colnames(SSR1) <- c("SiO2", "Al2O3", "Fe2O3", "CaO")
+colnames(SSR2) <- c("SiO2", "Al2O3", "Fe2O3", "CaO")
+
+#' 
+## ---------------------------------------------------------
+covariance <-
+function(x,n){
+
+a<-dim(x)
+a1<-dim(combn(a[2],2))
+a2<-t(combn(a[2],2))
+y1<-matrix(0,a[1]/n,a[2]) 
+y2<-matrix(0,a[1]/n,a1[2])
+
+
+v1<-matrix(0,a[1]-1,a[2]) 
+v2<-matrix(0,a[1]-1,a1[2])
+
+
+b<-dim(y1)
+b1<-dim(v1)
+
+z1<-matrix(0,1,a[2])
+z2<-matrix(0,1,a1[2])
+z<-matrix(0,a[2],a[2])
+
+w1<-1
+w2<-1
+
+
+
+if (n>1){
+for(j in 1:b[2]){
+  for(i in 1:b[1]){
+   y1[i,j]<-var(x[(i*n-(n-1)):(i*n),j])
+   z1[j]<-mean(y1[,j])
+ }
+}
+
+for(j in 1:a1[2]){
+  for(i in 1:b[1]){
+   a3<-a2[j,]
+   y2[i,j]<-cov((x[(i*n-(n-1)):(i*n),a3[1]]),(x[(i*n-(n-1)):(i*n),a3[2]]))
+   z2[j]<-mean(y2[,j])
+  }
+}
+
+for(i in 1:b[2]){
+  for(j in 1:b[2]){
+    ifelse(i==j,z[j,j]<-z1[j],(ifelse((j>i),c(z[i,j]<-z2[w1],w1<-w1+1),q<-0)))
+  }
+}
+
+for(j in 1:b[2]){
+  for(i in 1:b[2]){
+    ifelse(i==j,z[j,j]<-z1[j],(ifelse((j<i),c(z[i,j]<-z2[w2],w2<-w2+1),q<-0)))
+ 
+  }
+}
+
+}
+
+if (n==1){
+
+for(j in 1:b1[2]){
+  for(i in 1:b1[1]){
+   v1[i,j]<-x[i+1,j]-x[i,j]
+   z1[j]<-(t(v1[,j]))%*%(v1[,j])/(2*(a[1]-1))
+ }
+}
+
+for(j in 1:a1[2]){
+  for(i in 1:b1[1]){
+   a3<-a2[j,]
+   
+   z2[j]<-v1[,a3[1]]%*%v1[,a3[2]]/(2*(a[1]-1))
+  }
+}
+
+for(i in 1:b1[2]){
+  for(j in 1:b1[2]){
+    ifelse(i==j,z[j,j]<-z1[j],(ifelse((j>i),c(z[i,j]<-z2[w1],w1<-w1+1),q<-0)))
+  }
+}
+
+for(j in 1:b1[2]){
+  for(i in 1:b1[2]){
+    ifelse(i==j,z[j,j]<-z1[j],(ifelse((j<i),c(z[i,j]<-z2[w2],w2<-w2+1),q<-0)))
+ 
+  }
+}
+
+}
+
+
+z
+}
+
+#' 
+## ----results='hide', echo=FALSE---------------------------
+par(mfrow = c(1, 1))
+
+#' 
+#' Here is the code I will be using as the function for my SSRM.
+#' 
+## ---------------------------------------------------------
+mewma <- function(x, n, lambda) {
+  ucl_lookup <- c(
+    "0.05" = 12.63,
+    "0.1" = 13.50,
+    "0.2" = 13.59,
+    "0.3" = 13.13,
+    "0.35" = 12.78,
+    "0.4" = 12.41,
+    "0.5" = 11.63,
+    "0.8" = 9.31
+  )
+
+  if (!is.matrix(x)) {
+    stop("x must be a numeric matrix. Gunakan as.matrix() sebelum memanggil.")
+  }
+
+  lambda_key <- as.character(lambda)
+  if (!(lambda_key %in% names(ucl_lookup))) {
+    stop("Lambda value not supported. Please provide UCL manually for this lambda.")
+  }
+  ucl <- ucl_lookup[lambda_key]
+
+  a <- dim(x)
+  x1 <- matrix(0, a[1]/n, a[2])
+  z  <- matrix(0, a[1]/n, a[2])
+  y  <- matrix(0, a[1]/n, a[2])
+  t2 <- matrix(0, a[1]/n, 1)
+  t3 <- matrix(0, a[1]/n, 1)
+
+
+  for (j in 1:a[2]) {
+    for (i in 1:(a[1]/n)) {
+      y[i, j] <- mean(x[(i*n - (n - 1)):(i*n), j])
+    }
+  }
+
+  for (i in 1:(a[1]/n)) {
+    for (j in 1:a[2]) {
+      x1[i, j] <- y[i, j] - mean(y[, j])
+      z[i, j] <- if (i == 1) lambda * x1[i, j] else lambda * x1[i, j] + (1 - lambda) * z[i - 1, j]
+    }
+  }
+
+  cova <- covariance(x, n)
+
+  # Hitung Q(y) statistik
+  for (i in 1:(a[1]/n)) {
+    weights <- cova * (lambda * (1 - ((1 - lambda)^(2 * i))) / (2 - lambda))
+    inv <- ginv(weights)
+    za <- matrix(z[i, ])
+    t2[i, ] <- t(za) %*% inv %*% za
+  }
+
+
+  s3 <- max(t2, ucl) * 1.1  
+
+  colors <- ifelse(t2 > ucl, "red", "blue")
+
+  par(pty = "m")                          
+  par(mar = c(5, 4, 2, 2) + 0.1)            
+  
+  # Plot
+  plot(t2, type = "n",
+       ylab = "Q(y)", xlab = "Observation",
+       ylim = c(0, s3))
+
+  points(t2, col = colors, pch = 19, cex = 0.7) 
+  lines(t2, col = "gray", lty = 2)                 
+  abline(h = ucl, col = "red", lty = 2)           
+
+  text(x = length(t2) - 25, y = ucl,
+       labels = paste("UCL =", round(ucl, 2)),
+       pos = 3, col = "red", cex = 0.8)            
+
+  cat("Spatial Signed Rank MEWMA (SSRM) Control Chart\n")
+  cat("Upper Control Limit (UCL):", ucl, "\n")
+
+  # Deteksi titik yang out of control
+  k <- 1
+  for (i in 1:(a[1]/n)) {
+    if (t2[i] > ucl) {
+      t3[k, 1] <- i
+      k <- k + 1
+    }
+  }
+
+  if (k > 1) {
+    cat("The following point(s) fall outside of the control limits:\n")
+    for (i in 1:(a[1]/n)) {
+      if (t3[i] != 0) print(t3[i])
+    }
+    cat("Total observations out of control:", k - 1, "\n")
+  } else {
+    cat("No observations out of control.\n")
+  }
+
+  cat("Maximum value of Q(y) statistic:", max(t2), "\n")
+
+  # Output list
+  outList <- list(
+    title = "SSRM Control Chart",
+    t2 = t2,
+    covariance = cova
+  )
+  invisible(outList)
+}
+
+#' 
+## ----results='hide'---------------------------------------
+SSR1 <- as.matrix(SSR1)
+SSR2 <- as.matrix(SSR2)
+str(SSR1)
+str(SSR2)
+
+#' 
+#' The `n` in `mewma function` defines the subgroup sizes. In my case, the dataset is contains the averages of 5 samples for each variables, which means that the dataset only contains one subgroup per variables. Hence, in the function, i put `n=1` so it can fit my case.
+#' 
+## ---------------------------------------------------------
+SSRM_full <- mewma(as.matrix(data), n = 1, lambda = 0.05)
+
+#' 
+## ---------------------------------------------------------
+SSRM1 <- mewma(SSR1, n = 1, lambda = 0.05)
+
+#' 
+## ---------------------------------------------------------
+SSRM2 <- mewma(SSR1, n = 1, lambda = 0.1)
+
+#' 
+## ---------------------------------------------------------
+SSRM3 <- mewma(SSR1, n = 1, lambda = 0.2)
+
+#' 
+## ---------------------------------------------------------
+SSRM4 <- mewma(SSR1, n = 1, lambda = 0.3)
+
+#' 
+## ---------------------------------------------------------
+SSRM5 <- mewma(SSR1, n = 1, lambda = 0.35)
+
+#' 
+## ---------------------------------------------------------
+SSRM6 <- mewma(SSR1, n = 1, lambda = 0.4)
+
+#' 
+## ---------------------------------------------------------
+SSRM7 <- mewma(SSR1, n = 1, lambda = 0.5)
+
+#' 
+## ---------------------------------------------------------
+SSRM8 <- mewma(SSR1, n = 1, lambda = 0.8)
+
+#' 
+#' Based on the results, I decided to use **lambda = 0.05** as it generated the highest number of OOC observations.
+#' 
+#' 
+#' ### Out-of-Control Identification for SSRM
+#' Just like the MEWMV, the identification for OOC in SSRM is conducted by using the combination for each variables.
+#' 
+## ----results='hide'---------------------------------------
+com_1 <- SSR1[, c("SiO2", "Al2O3")]
+com_2 <- SSR1[, c("SiO2", "Fe2O3")]
+com_3 <- SSR1[, c("SiO2", "CaO")]
+com_4 <- SSR1[, c("Al2O3", "Fe2O3")]
+com_5 <- SSR1[, c("Al2O3", "CaO")]
+com_6 <- SSR1[, c("Fe2O3", "CaO")]
+com_7 <- SSR1[, c("SiO2", "Al2O3", "Fe2O3")]
+com_8 <- SSR1[, c("SiO2", "Al2O3", "CaO")]
+com_9 <- SSR1[, c("SiO2", "Fe2O3", "CaO")]
+com_10 <- SSR1[, c("Al2O3", "Fe2O3", "CaO")]
+
+#' 
+## ----results='hide'---------------------------------------
+com_1 <- as.matrix(com_1)
+com_2 <- as.matrix(com_2)
+com_3 <- as.matrix(com_3)
+com_4 <- as.matrix(com_4)
+com_5 <- as.matrix(com_5)
+com_6 <- as.matrix(com_6)
+com_7 <- as.matrix(com_7)
+com_8 <- as.matrix(com_8)
+com_9 <- as.matrix(com_9)
+com_10 <- as.matrix(com_10)
+
+#' 
+## ---------------------------------------------------------
+SSRM_C1 <- mewma(com_1, n = 1, lambda = 0.05)
+
+#' 
+## ---------------------------------------------------------
+SSRM_C2 <- mewma(com_2, n = 1, lambda = 0.05)
+
+#' 
+## ---------------------------------------------------------
+SSRM_C3 <- mewma(com_3, n = 1, lambda = 0.05)
+
+#' 
+## ---------------------------------------------------------
+SSRM_C4 <- mewma(com_4, n = 1, lambda = 0.05)
+
+#' 
+## ---------------------------------------------------------
+SSRM_C5 <- mewma(com_5, n = 1, lambda = 0.05)
+
+#' 
+## ---------------------------------------------------------
+SSRM_C6 <- mewma(com_6, n = 1, lambda = 0.05)
+
+#' 
+## ---------------------------------------------------------
+SSRM_C7 <- mewma(com_7, n = 1, lambda = 0.05)
+
+#' 
+## ---------------------------------------------------------
+SSRM_C8 <- mewma(com_8, n = 1, lambda = 0.05)
+
+#' 
+## ---------------------------------------------------------
+SSRM_C9 <- mewma(com_9, n = 1, lambda = 0.05)
+
+#' 
+## ---------------------------------------------------------
+SSRM_C10 <- mewma(com_10, n = 1, lambda = 0.05)
+
+#' 
+#' Based on the results of those combinations, the combinations which contained `CaO` are having the higher number of OOC. Hence, it can be said that `comb_4` and `comb_6` may be the caused of the OOC observations.
+#' 
+#' ### Gaining In Control SSRM
+#' Once I've done the identification, I need to repair the CC by eliminating all the OOC observations one by one using iterations which code can be seen below:
+#' 
+## ---------------------------------------------------------
+mewma_iterasi <- function(data, n, lambda) {
+  df_iter <- data
+  iterasi <- 1
+  hasil_list <- list()
+  index_dihapus <- c()
+
+  repeat {
+    cat("=== Iterasi", iterasi, "===\n")
+    result <- mewma(df_iter, n = n, lambda = lambda)
+    t2_values <- as.vector(result$t2)
+    
+    ucl_lookup <- c(
+      "0.05" = 12.63,
+      "0.1" = 13.50,
+      "0.2" = 13.59,
+      "0.3" = 13.13,
+      "0.35" = 12.78,
+      "0.4" = 12.41,
+      "0.5" = 11.63,
+      "0.8" = 9.31
+    )
+    ucl <- ucl_lookup[as.character(lambda)]
+
+    ooc_indices <- which(t2_values > ucl)
+
+    if (length(ooc_indices) == 0) {
+      cat("Semua titik dalam kontrol.\n")
+      break
+    }
+
+    max_ooc <- ooc_indices[which.max(t2_values[ooc_indices])]
+    index_dihapus <- c(index_dihapus, max_ooc)
+
+    baris_awal <- (max_ooc - 1) * n + 1
+    baris_akhir <- max_ooc * n
+    index_asli <- baris_awal:baris_akhir
+
+    df_iter <- df_iter[-index_asli, ]
+
+    hasil_list[[iterasi]] <- list(
+      t2 = t2_values,
+      removed_index = max_ooc,
+      removed_rows = index_asli
+    )
+
+    iterasi <- iterasi + 1
+  }
+
+  cat("Jumlah iterasi:", iterasi - 1, "\n")
+  cat("Total observasi dihapus:", length(index_dihapus), "\n")
+
+  png("final_MEWMA_plot.png", width = 800, height = 600)
+
+  # Margin
+  par(mar = c(5, 5, 6, 4))
+
+  # Plot MEWMA
+  mewma(df_iter, n = n, lambda = lambda)
+
+  title(ylab = "Q(y)")
+
+  dev.off()
+
+  write_xlsx(as.data.frame(df_iter), "data_bersih_akhir.xlsx")
+
+  return(list(
+    clean_data = df_iter,
+    total_iterasi = iterasi - 1,
+    removed_groups = index_dihapus,
+    log = hasil_list
+  ))
+}
+
+
+#' 
+## ---------------------------------------------------------
+hasil_mewma <- mewma_iterasi(as.matrix(SSR1), n = 1, lambda = 0.05)
+
+#' 
+#' ### Monitoring the Mean Process
+#' Just like in MEWMV, the monitoring for process in mean is conducted by using the data of second phase.
+## ---------------------------------------------------------
+SSRMF2 <- mewma(SSR2, n = 1, lambda = 0.05)
+
+#' 
+#' Based on the results, there are 13 observations that exceed the control limit, hence it can be conclude that the process is still not in control based on mean and there's a need to identification for the cause of it once again.
+#' 
+## ----results='hide'---------------------------------------
+com_1 <- SSR2[, c("SiO2", "Al2O3")]
+com_2 <- SSR2[, c("SiO2", "Fe2O3")]
+com_3 <- SSR2[, c("SiO2", "CaO")]
+com_4 <- SSR2[, c("Al2O3", "Fe2O3")]
+com_5 <- SSR2[, c("Al2O3", "CaO")]
+com_6 <- SSR2[, c("Fe2O3", "CaO")]
+com_7 <- SSR2[, c("SiO2", "Al2O3", "Fe2O3")]
+com_8 <- SSR2[, c("SiO2", "Al2O3", "CaO")]
+com_9 <- SSR2[, c("SiO2", "Fe2O3", "CaO")]
+com_10 <- SSR2[, c("Al2O3", "Fe2O3", "CaO")]
+
+#' 
+## ---------------------------------------------------------
+SSRM_C1 <- mewma(com_1, n = 1, lambda = 0.05)
+
+#' 
+## ---------------------------------------------------------
+SSRM_C2 <- mewma(com_2, n = 1, lambda = 0.05)
+
+#' 
+## ---------------------------------------------------------
+SSRM_C3 <- mewma(com_3, n = 1, lambda = 0.05)
+
+#' 
+## ---------------------------------------------------------
+SSRM_C4 <- mewma(com_4, n = 1, lambda = 0.05)
+
+#' 
+## ---------------------------------------------------------
+SSRM_C5 <- mewma(com_5, n = 1, lambda = 0.05)
+
+#' 
+## ---------------------------------------------------------
+SSRM_C6 <- mewma(com_6, n = 1, lambda = 0.05)
+
+#' 
+## ---------------------------------------------------------
+SSRM_C7 <- mewma(com_7, n = 1, lambda = 0.05)
+
+#' 
+## ---------------------------------------------------------
+SSRM_C8 <- mewma(com_8, n = 1, lambda = 0.05)
+
+#' 
+## ---------------------------------------------------------
+SSRM_C9 <- mewma(com_9, n = 1, lambda = 0.05)
+
+#' 
+## ---------------------------------------------------------
+SSRM_C10 <- mewma(com_10, n = 1, lambda = 0.05)
+
+#' 
+#' 
+#' ### Gaining in Control for SSRM Phase 2
+## ---------------------------------------------------------
+hasil_ssrm_fase_2 <- mewma_iterasi(as.matrix(SSR2), n = 1, lambda = 0.05)
+
+#' 
+## ---------------------------------------------------------
+phase_2 <- data[362:nrow(data), ]
+
+#' 
+## ---------------------------------------------------------
+phase_1 <- data[1:361, ]
+
+#' 
+#' 
+## ---------------------------------------------------------
+total_rows <- nrow(SSR2)
+
+all_indices <- 1:total_rows
+
+removed_rows_all <- unlist(lapply(hasil_ssrm_fase_2$log, function(x) x$removed_rows))
+clean_indices <- setdiff(all_indices, removed_rows_all)
+
+raw_cleaned_phase2 <- phase_2[clean_indices, ]
+
+write_xlsx(as.data.frame(raw_cleaned_phase2), "fase_2_cleaned.xlsx")
+
+#' 
+## ---------------------------------------------------------
+total_rows <- nrow(SSR1)
+
+all_indices <- 1:total_rows
+
+removed_rows_all <- unlist(lapply(hasil_mewma$log, function(x) x$removed_rows))
+clean_indices <- setdiff(all_indices, removed_rows_all)
+
+raw_cleaned_phase1 <- phase_1[clean_indices, ]
+
+write_xlsx(as.data.frame(raw_cleaned_phase1), "fase_1_cleaned.xlsx")
+
+#' 
+#' 
+#' 
+#' 
+#' 
+#' 
+#' 
+#' 
+#' 
+#' 
+#' ## Process Capability
+#' Process Capability is conduced to know the precision and accuracy of a production or a process. In this analysis, there is only one spesification for the data which is the total of the data is needs to reach at least 50 percent. Hence, the process capabilty will be conducted using the univariate method.
+#' 
+#' The calculation can be seen in the code below:
+## ---------------------------------------------------------
+pc <- clean2$Total
+
+USL <- 1
+LSL <- 0.5
+
+M <- median(pc)
+
+F_00135 <- quantile(pc, probs = 0.00135, type = 7)
+F_99865 <- quantile(pc, probs = 0.99865, type = 7)
+
+C_Np <- (USL - LSL) / (F_99865 - F_00135)
+
+denominator <- (F_99865 - F_00135) / 2
+C_Npk <- min((USL - M)/denominator, (M - LSL)/denominator)
+
+cat("C_Np  =", round(C_Np, 4), "\n")
+cat("C_Npk =", round(C_Npk, 4), "\n")
+
+
+#' 
+## ---------------------------------------------------------
+pc <- clean1$Total
+
+USL <- 1
+LSL <- 0.5
+
+M <- median(pc)
+
+F_00135 <- quantile(pc, probs = 0.00135, type = 7)
+F_99865 <- quantile(pc, probs = 0.99865, type = 7)
+
+C_Np <- (USL - LSL) / (F_99865 - F_00135)
+
+denominator <- (F_99865 - F_00135) / 2
+C_Npk <- min((USL - M)/denominator, (M - LSL)/denominator)
+
+cat("C_Np  =", round(C_Np, 4), "\n")
+cat("C_Npk =", round(C_Npk, 4), "\n")
+
+
+#' 
+#' 
+#' 
+#' 
+#' Based on the result above, it can be said that the process is already in a good precision and accuracy. Hence, the process can be said already capable.
+#' 
+#' ### References
+#' [mewma]: https://github.com/cran/MEWMA/blob/master/R/mewma.R
+#' [mewmv]: https://www.tandfonline.com/doi/full/10.1080/00207543.2016.1278081?needAccess=true
+#' 
