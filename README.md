@@ -1,6 +1,6 @@
 ## Prior Notice
 
-Due to **confidentially** of internal data which obtained from the company, within this repository, I will *not provide the raw data* that used in the analysis. Instead, I will provide which data I used to define some variables in the codes, in case you want to use the codes to your analysis.
+Due to **confidentially** of internal data which obtained from the company, within this repository, I will *not provide the raw data* that used in the analysis. Instead, I will provide which data I used to define some variables in the codes, in case you want to use the codes for your analysis.
 * ```Data FABA``` is the raw data I used in the analysis.
 * ```Scaled Phase One``` is the first phase data that has been standardized.
 * ```Scaled Phase Two``` is the second phase data that has been standardized.
